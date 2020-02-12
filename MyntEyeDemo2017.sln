@@ -3,11 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.28307.960
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MyntEyeDemo2017", "MyntEyeDemo2017\MyntEyeDemo2017.vcxproj", "{B43BFF8F-0728-4F8E-9246-8B41C48C37A0}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MyntEye.NETWrapper", "MyntEye.NETWrapper\MyntEye.NETWrapper.vcxproj", "{A0A1AA88-B6DA-4257-A237-EB64CF989514}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MyntWrapper", "MyntWrapper\MyntWrapper.vcxproj", "{8D181330-747C-4BDC-B3A9-D79F8AD7E242}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MyntEyeDemo2017", "src\MyntEyeDemo2017\MyntEyeDemo2017.vcxproj", "{B43BFF8F-0728-4F8E-9246-8B41C48C37A0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
