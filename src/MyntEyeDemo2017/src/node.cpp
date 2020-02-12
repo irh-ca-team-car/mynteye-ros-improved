@@ -1,27 +1,47 @@
 // MyntEyeDemo2017.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
 
+#include<mynteye/api/api.h>
 #ifdef _WIN32
-#include <Windows.h>
+#include "Windows.h"
 #endif
+#ifdef _DEBUG
+#define ISDEBUG
+#undef __MSVC_RUNTIME_CHECKS
+#undef _DEBUG
+#endif
+
+#ifndef NDEBUG
+#define NDEBUG
+#endif
+//ROS HEADERS CONTAINS DEBUG SYMBOLS BUT LIB FILE ARE NOT AVAILABLE ON WINDOWS
+
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc.hpp>
-#include<mynteye/api/api.h>
 #include <chrono>
 #include <thread>
 #include <string>
 #include <mutex>
 #include <atomic>
-
-#ifdef _WIN32
-#include <conio.h>
-#endif
 #include "ros/ros.h"
 #include "sensor_msgs/Imu.h"
 #include "sensor_msgs/Image.h"
 #include "cv_bridge/cv_bridge.h"
 #include "sensor_msgs/PointCloud2.h"
 #include "sensor_msgs/point_cloud2_iterator.h"
+#include <tf/tf.h>
+#include <tf2_ros/static_transform_broadcaster.h>
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/TransformStamped.h>
+#include <tf2/LinearMath/Quaternion.h>
+#ifdef ISDEBUG
+#define _DEBUG
+#endif
+
+#ifdef _WIN32
+#include <conio.h>
+#endif
+
 using namespace std::this_thread; // sleep_for, sleep_until
 using namespace std::chrono; // nanoseconds, system_clock, seconds
 
@@ -48,24 +68,7 @@ double average(Mat frame)
 		d /= ct;
 	return d;
 }
-void clear() {
-#ifdef _WIN32
-	COORD topLeft = { 0, 0 };
-	HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
-	CONSOLE_SCREEN_BUFFER_INFO screen;
-	DWORD written;
 
-	GetConsoleScreenBufferInfo(console, &screen);
-	FillConsoleOutputCharacterA(
-		console, ' ', screen.dwSize.X * screen.dwSize.Y, topLeft, &written
-	);
-	FillConsoleOutputAttribute(
-		console, FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
-		screen.dwSize.X * screen.dwSize.Y, topLeft, &written
-	);
-	SetConsoleCursorPosition(console, topLeft);
-#endif
-}
 struct Operator
 {
 	void operator ()(ushort &pixel, const int * position) const
@@ -154,6 +157,9 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 {
 	api->EnableMotionDatas();
 	api->EnableStreamData(Stream::DEPTH);
+
+	printf("Enabling DEPTH stream\r\n");
+
 	//auto stream_intrinsics = api->GetIntrinsics(Stream::POINTS);
 
 	//PCViewer pcviewer(stream_intrinsics,1000);
@@ -163,7 +169,25 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 
 	cv::Mat left;
 
+	static tf2_ros::StaticTransformBroadcaster static_broadcaster;
+	geometry_msgs::TransformStamped static_transformStamped;
+
+	static_transformStamped.header.stamp = ros::Time::now();
+	static_transformStamped.header.frame_id = "map";
+	static_transformStamped.child_frame_id = "mynteye";
+	static_transformStamped.transform.translation.x = 0;
+	static_transformStamped.transform.translation.y = 0;
+	static_transformStamped.transform.translation.z = 0;
+	tf2::Quaternion quat;
+	quat.setRPY(0,0,0);
+	static_transformStamped.transform.rotation.x = quat.x();
+	static_transformStamped.transform.rotation.y = quat.y();
+	static_transformStamped.transform.rotation.z = quat.z();
+	static_transformStamped.transform.rotation.w = quat.w();
+	static_broadcaster.sendTransform(static_transformStamped);
+
 	std::mutex depth_mtx, left_mtx;
+	printf("Enabling DEPTH processing\r\n");
 	api->SetStreamCallback(
 		Stream::DEPTH,
 		[&api,&depth_mtx,&left](const api::StreamData &data) {
@@ -174,59 +198,70 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 		publishPoints(api, data,left, 0);
 
 		send(DEPTH_IDX, mat, "mono16");
-		Mat mat2;
-		double avgDepthMM;
-		auto str = to_string(avgDepthMM = average(mat));
-		//mat.convertTo(mat, CV_8UC1, 1);
-		//std::cout << str << std::endl;
+		if (p[DEPTH_CM_IDX]->getNumSubscribers() > 0)
+		{
+			Mat mat2;
+			double avgDepthMM;
+			auto str = to_string(avgDepthMM = average(mat));
+			//mat.convertTo(mat, CV_8UC1, 1);
+			//std::cout << str << std::endl;
 
-		ushort min, max;
-		analyzeRange(mat, &min, &max);
-		mat.forEach<ushort>(Operator());
-		mat.forEach<ushort>(OperatorRange(min, max));
-		//mat = UINT16_MAX - mat;//0.8m = 800
+			ushort min, max;
+			analyzeRange(mat, &min, &max);
+			mat.forEach<ushort>(Operator());
+			mat.forEach<ushort>(OperatorRange(min, max));
+			//mat = UINT16_MAX - mat;//0.8m = 800
 
-		cv::convertScaleAbs(mat, mat2, 1 / 255.0, 0);
-		
-		applyColorMap(mat2, mat2, COLORMAP_JET);
-		//0m = white
-		//16m= black
+			cv::convertScaleAbs(mat, mat2, 1 / 255.0, 0);
 
-		send(DEPTH_CM_IDX, mat2, "bgr8");
-		
+			applyColorMap(mat2, mat2, COLORMAP_JET);
+			//0m = white
+			//16m= black
+
+			send(DEPTH_CM_IDX, mat2, "bgr8");
+		}
 		//cv::putText(mat2, str, Point(0, 20), FONT_HERSHEY_COMPLEX, 1, Scalar(INT8_MAX, INT8_MAX, INT8_MAX, INT8_MAX), 3, 8, false);
 		//		
 		//cv::imshow("depth", mat2); // CV_16UC1
 
 	});
+	printf("DEPTH processing ENABLED\r\n");
+	printf("Enabling MOTION stream\r\n");
 	api->SetMotionCallback([](const api::MotionData & data) {
-		auto msg = sensor_msgs::Imu();
-		auto gyro = geometry_msgs::Vector3();
-		auto acc = geometry_msgs::Vector3();
-		if (data.imu->gyro)
+		if (p[IMU_IDX]->getNumSubscribers() > 0)
 		{
-			gyro.x = data.imu->gyro[0];
-			gyro.y = data.imu->gyro[1];
-			gyro.z = data.imu->gyro[2];
-			msg.angular_velocity = gyro;
-		}
-		if (data.imu->accel)
-		{
-			acc.x = data.imu->accel[0];
-			acc.y = data.imu->accel[1];
-			acc.z = data.imu->accel[2];
-			msg.linear_acceleration = acc;
-		}
-				
-		p[IMU_IDX]->publish(msg);
+			auto msg = sensor_msgs::Imu();
+			msg.header.frame_id = "map";
+			msg.header.seq = 0;
 
+			auto gyro = geometry_msgs::Vector3();
+			auto acc = geometry_msgs::Vector3();
+			if (data.imu->gyro)
+			{
+				gyro.x = data.imu->gyro[0];
+				gyro.y = data.imu->gyro[1];
+				gyro.z = data.imu->gyro[2];
+				msg.angular_velocity = gyro;
+			}
+			if (data.imu->accel)
+			{
+				acc.x = data.imu->accel[0];
+				acc.y = data.imu->accel[1];
+				acc.z = data.imu->accel[2];
+				msg.linear_acceleration = acc;
+			}
+
+			p[IMU_IDX]->publish(msg);
+		}
 		//double G = 9.81;
 		//printf("IMU: Acc : x=%5.2lf m/s2 y=%5.2lf m/s2 z=%5.2lf m/s2 ", data.imu->accel[0] * G, data.imu->accel[1] * G, data.imu->accel[2] * G);
 		//printf(" Gyro: x=%8.1lf d/s y=%8.1lf d/s z=%8.1lf d/s ", data.imu->gyro[0], data.imu->gyro[1], data.imu->gyro[2]);
 		//printf(" DEPTH: %5.2lf M\r\n", avgDepthMM / 1000);
 	});
+	printf("MOTION stream ENABLED\r\n");
+	printf("Starting camera\r\n");
 	api->Start(Source::ALL);
-
+	printf("Camera Started\r\n");
 #ifdef _WIN32
 	//FreeConsole();
 #endif
@@ -247,25 +282,27 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 			break;
 		}
 	}
-
+	printf("Closing camera\r\n");
 	api->Stop(Source::ALL);
-
+	printf("Camera closed\r\n");
 }
 
 int main(int argc, char* argv[])
 {
-	std::cout << "HOME";
-	ros::init(argc, argv, "mynteye_win");
-	std::cout << "HOME2";
+	std::map<std::string, std::string> emptyMap;
+	printf("Created empty map\r\n");
+	ros::init(emptyMap, "mynteye_win", ros::init_options::AnonymousName);
+	printf("Ros has been initialized\r\n");
 	ros::NodeHandle nl;
-	std::cout << "HOM3";
+	printf("Obtained NodeHandle\r\n");
 	ros::Publisher pl= nl.advertise<sensor_msgs::Image>("image/left", 1);
 	ros::Publisher pd = nl.advertise<sensor_msgs::Image>("image/depth", 1);
 	ros::Publisher pdc = nl.advertise<sensor_msgs::Image>("image/depth/color_map", 1);
 	ros::Publisher pr = nl.advertise<sensor_msgs::Image>("image/right", 1);
-	ros::Publisher pimu = nl.advertise<sensor_msgs::Imu>("imu", 100);
+	ros::Publisher pimu = nl.advertise<sensor_msgs::Imu>("mynteye/imu", 100);
 	ros::Publisher ppc = nl.advertise<sensor_msgs::PointCloud2>("image/point_cloud", 1);
-	std::cout << "HOM4";
+	printf("Advertised topics\r\n");
+
 	p[LEFT_IDX] = &pl;
 	p[DEPTH_IDX] = &pd;
 	p[RIGHT_IDX] = &pr;
@@ -273,6 +310,7 @@ int main(int argc, char* argv[])
 	p[IMU_IDX] = &pimu;
 	p[PCL_IDX] = &ppc;
 
+	printf("Obtaining MyntEYE API\r\n");
 	auto api = API::Create(argc, argv);
 	
 	if (api)
@@ -298,97 +336,103 @@ void publishPoints(std::shared_ptr<mynteye::API> api,
 	// if (points_publisher_.getNumSubscribers() == 0)
 	//   return;
 
-	auto &&in = api->GetIntrinsicsBase(Stream::LEFT);
+	if (p[PCL_IDX]->getNumSubscribers())
+	{
+		auto &&in = api->GetIntrinsicsBase(Stream::LEFT);
 
-	
 
-	int count = 0;
-	cv::Mat m = data.frame;
-	ushort min, max;
-	analyzeRange(m, &min, &max);
 
-	ushort* ptr = (ushort*)m.data;
-	for (std::size_t y = 0; y < m.rows; ++y) {
-		for (std::size_t x = 0; x < m.cols; ++x) {
-			auto point = *ptr++;
-			if(point!=0)
-				count++;
+		int count = 0;
+		cv::Mat m = data.frame;
+		ushort min, max;
+		analyzeRange(m, &min, &max);
+
+		ushort* ptr = (ushort*)m.data;
+		for (std::size_t y = 0; y < m.rows; ++y) {
+			for (std::size_t x = 0; x < m.cols; ++x) {
+				auto point = *ptr++;
+				if (point != 0)
+					count++;
+			}
 		}
-	}
-	sensor_msgs::PointCloud2 msg;
-	msg.header.seq = seq;
-	msg.header.frame_id = "map";
-	printf("%d NON ZERO PIXELS", count);
-	msg.width = count;
-	msg.height = 1;
-	msg.is_dense = true;
+		auto time = ros::Time::now();
+		sensor_msgs::PointCloud2 msg;
+		msg.header.seq = seq;
+		msg.header.stamp = time;
+		msg.header.frame_id = "map";
+		
+		msg.width = count;
+		msg.height = 1;
+		msg.is_dense = true;
 
-	sensor_msgs::PointCloud2Modifier modifier(msg);
+		sensor_msgs::PointCloud2Modifier modifier(msg);
 
-	modifier.setPointCloud2Fields(
-		4, 
-		"x", 1, sensor_msgs::PointField::FLOAT32, 
-		"y", 1,	sensor_msgs::PointField::FLOAT32, 
-		"z", 1,	sensor_msgs::PointField::FLOAT32, 
-		"m", 1,	sensor_msgs::PointField::UINT8);
+		modifier.setPointCloud2Fields(
+			4,
+			"x", 1, sensor_msgs::PointField::FLOAT32,
+			"y", 1, sensor_msgs::PointField::FLOAT32,
+			"z", 1, sensor_msgs::PointField::FLOAT32,
+			"m", 1, sensor_msgs::PointField::UINT8);
 
-	modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+		modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
 
-	sensor_msgs::PointCloud2Iterator<float> iter_x(msg, "x");
-	sensor_msgs::PointCloud2Iterator<float> iter_y(msg, "y");
-	sensor_msgs::PointCloud2Iterator<float> iter_z(msg, "z");
+		sensor_msgs::PointCloud2Iterator<float> iter_x(msg, "x");
+		sensor_msgs::PointCloud2Iterator<float> iter_y(msg, "y");
+		sensor_msgs::PointCloud2Iterator<float> iter_z(msg, "z");
 
-	sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(msg, "r");
-	sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(msg, "g");
-	sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(msg, "b");
-	
-	ptr = (ushort*)m.data;
-	
-	float FOV_H = 122;
-	float FOV_V = 76;
+		sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(msg, "r");
+		sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(msg, "g");
+		sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(msg, "b");
 
-	byte* color = left.data;
+		ptr = (ushort*)m.data;
 
-	for (int y = 0; y < m.rows; ++y) {
-		for (int x = 0; x < m.cols; ++x) {
-			auto point = *ptr++;
-			if (point != 0)
-			{
+		float FOV_H = 122;
+		float FOV_V = 76;
+
+		byte* color = left.data;
+
+		for (int y = 0; y < m.rows; ++y) {
+			for (int x = 0; x < m.cols; ++x) {
+				auto point = *ptr++;
+				auto clr = *color++;
+				if (point != 0)
+				{
 #define ALIGN(A) 
 #define CENTER(FOV) - FOV * 0.5
 #define LEFT (FOV)
 #define TOP(FOV)
 #define RIGHT(FOV)
 #define BOTTOM(FOV)
+					float h_theta = (FOV_H * (x / (float)m.cols) ALIGN(CENTER(FOV_H)))* PI / 180.0;
+					float v_theta = (FOV_V * ((m.rows - y) / (float)m.rows - 0.5f) ALIGN(CENTER(FOV_V)))* PI / 180.0;
+					float yaw = h_theta;
+					float pitch = v_theta;
 
-				float h_theta = (FOV_H * (x / (float)m.cols) ALIGN(CENTER(FOV_H)))* PI / 180.0;
-				float v_theta = (FOV_V * ((m.rows -y) / (float)m.rows -0.5f) ALIGN(CENTER(FOV_V)))* PI / 180.0;
-				float yam = h_theta;
-				float pitch = v_theta;
-
-				float x = sin(h_theta)*cos(v_theta)*point/1000;
-				float y = cos(h_theta)*cos(v_theta)*point / 1000;
-				float z = sin(v_theta)*point / 1000;
+					float x = sin(yaw)*cos(pitch)*point / 1000;
+					float y = cos(yaw)*cos(pitch)*point / 1000;
+					float z = sin(pitch)*point / 1000;
 
 
-				*iter_x = x;
-				*iter_y = y;
-				*iter_z = z;
+					*iter_x = x;
+					*iter_y = y;
+					*iter_z = z;
 
-				*iter_r = static_cast<uint8_t>(*color);
-				*iter_g = static_cast<uint8_t>(*color);
-				*iter_b = static_cast<uint8_t>(*color);
-
-				color++;
-				++iter_x;
-				++iter_y;
-				++iter_z;
-				++iter_r;
-				++iter_g;
-				++iter_b;
+					*iter_r = static_cast<uint8_t>(clr);
+					*iter_g = static_cast<uint8_t>(clr);
+					*iter_b = static_cast<uint8_t>(clr);
+	
+					++iter_x;
+					++iter_y;
+					++iter_z;
+					++iter_r;
+					++iter_g;
+					++iter_b;
+				}
+				
 			}
 		}
+
+		p[PCL_IDX]->publish(msg);
 	}
 
-	p[PCL_IDX]->publish(msg);
 }

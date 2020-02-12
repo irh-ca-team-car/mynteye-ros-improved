@@ -102,7 +102,7 @@ set(LINK_LIBS
 #target_link_libraries(mynteye_wrapper ${LINK_LIBS})
 #add_dependencies(mynteye_wrapper ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-add_executable(mynteye_wrapper_node src/MyntEyeDemo2017.cpp)
+add_executable(mynteye_wrapper_node src/node.cpp)
 add_dependencies(mynteye_wrapper_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(mynteye_wrapper_node ${LINK_LIBS})
 
