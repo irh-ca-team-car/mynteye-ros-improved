@@ -1,8 +1,26 @@
-// MyntEyeDemo2017.cpp : This file contains the 'main' function. Program execution begins and ends there.
+// Main node for Mynteye
 //
 
 #include<mynteye/api/api.h>
+ 
+#pragma warning( push )
+//Severity	Code	Description	Project	File	Line	Suppression State
+//Error(active)	E0145	member "boost::chrono::system_clock::is_steady" may not be initialized	MyntEye_ROS	C : \opt\rosdeps\x64\include\boost - 1_66\boost\chrono\system_clocks.hpp	134
+#pragma warning( disable : E0415 )
+#pragma warning( disable : 0415 )
+//unkown attribute no_init_all in winnt.h
+#pragma warning( disable : E1097 )
+#pragma warning( disable : 1097 )
+//It's a bug in visual studio, the project compiles even with these errors
+//DLL warning in mynteye API
+#pragma warning( disable: C4251)
+#pragma warning( disable: 4251)
+//An error caused by changing the project name
+#pragma warning( disable: MSB8028)
+#pragma warning( disable: 8028)
+
 #ifdef _WIN32
+// On windows, ROS need the Windows.h
 #include "Windows.h"
 #endif
 #ifdef _DEBUG
@@ -41,9 +59,14 @@
 #ifdef _WIN32
 #include <conio.h>
 #endif
+#define Rad2Deg(A) ((A)* (3.14 / 180))
+
+
 
 using namespace std::this_thread; // sleep_for, sleep_until
 using namespace std::chrono; // nanoseconds, system_clock, seconds
+
+double theta_x=0, theta_y=0, theta_z=0;
 
 using namespace mynteye;
 using namespace cv;
@@ -51,7 +74,7 @@ using byte = unsigned char;
 typedef cv::Point3_<uint8_t> Pixel;
 void publishPoints(std::shared_ptr<mynteye::API> api, const mynteye::api::StreamData &data, cv::Mat left, std::uint32_t seq);
 
-double average(Mat frame)
+double average(Mat frame)//Return the average distance in mm
 {
 	double d = 0;
 
@@ -69,7 +92,7 @@ double average(Mat frame)
 	return d;
 }
 
-struct Operator
+struct Operator//Remove objects that are less than 0.1m from the camera since it is mostly false detections
 {
 	void operator ()(ushort &pixel, const int * position) const
 	{
@@ -77,7 +100,7 @@ struct Operator
 			pixel = UINT16_MAX;
 	}
 };
-struct OperatorRange
+struct OperatorRange//Apply a range over a cv mat
 {
 public:
 	OperatorRange(ushort a, ushort b)
@@ -94,26 +117,28 @@ public:
 	}
 	void operator ()(ushort &pixel, const int * position) const
 	{
-		if (pixel > ma)
+		if (pixel > ma)//If over max, set it to max
 		{
 			pixel = UINT16_MAX;
 			return;
 		}
-		if (pixel < mi)
+		if (pixel < mi)//If less than min set it to zero
 		{
 			pixel = 0;
 			return;
 		}
-		pixel = (ushort)((pixel - mi) / r * UINT16_MAX);
+		pixel = (ushort)((pixel - mi) / r * UINT16_MAX);//Uniformely space
 	}
 private:
 	double mi, ma;
 	double r;
 };
-std::string to_string(double data)
+
+std::string to_string(double data)//Convert a mm value to a meter string
 {
 	return std::to_string(data / 1000) + "m";
 }
+//Store ros elements
 ros::NodeHandle* n;
 ros::Publisher* p[6];
 #define DEPTH_IDX 1
@@ -122,7 +147,7 @@ ros::Publisher* p[6];
 #define RIGHT_IDX 2
 #define IMU_IDX 4
 #define PCL_IDX 5
-
+//Find range of mat
 void analyzeRange(Mat m, ushort* min, ushort* max)
 {
 	ushort lmin = UINT16_MAX;
@@ -144,7 +169,7 @@ void analyzeRange(Mat m, ushort* min, ushort* max)
 	if (max)
 		*max = lmax;
 }
-
+//Send a cv::Mat over ROS
 void send(int idx, Mat m, std::string format)
 {
 	cv_bridge::CvImage img;
@@ -153,39 +178,18 @@ void send(int idx, Mat m, std::string format)
 	auto msg = img.toImageMsg();
 	p[idx]->publish(msg);
 }
+//Main loop
 void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 {
+	//Do not enable Stream::POINTS since we create the point cloud using the depth map
 	api->EnableMotionDatas();
 	api->EnableStreamData(Stream::DEPTH);
-
+	//Some debug messages when we start the node
 	printf("Enabling DEPTH stream\r\n");
 
-	//auto stream_intrinsics = api->GetIntrinsics(Stream::POINTS);
-
-	//PCViewer pcviewer(stream_intrinsics,1000);
-	//cv::namedWindow("frame");
-
-	std::atomic_uint depth_count(0);
-
+	//Store the left image to apply the correct gray on the point cloud
 	cv::Mat left;
-
-	static tf2_ros::StaticTransformBroadcaster static_broadcaster;
-	geometry_msgs::TransformStamped static_transformStamped;
-
-	static_transformStamped.header.stamp = ros::Time::now();
-	static_transformStamped.header.frame_id = "map";
-	static_transformStamped.child_frame_id = "mynteye";
-	static_transformStamped.transform.translation.x = 0;
-	static_transformStamped.transform.translation.y = 0;
-	static_transformStamped.transform.translation.z = 0;
-	tf2::Quaternion quat;
-	quat.setRPY(0,0,0);
-	static_transformStamped.transform.rotation.x = quat.x();
-	static_transformStamped.transform.rotation.y = quat.y();
-	static_transformStamped.transform.rotation.z = quat.z();
-	static_transformStamped.transform.rotation.w = quat.w();
-	static_broadcaster.sendTransform(static_transformStamped);
-
+	
 	std::mutex depth_mtx, left_mtx;
 	printf("Enabling DEPTH processing\r\n");
 	api->SetStreamCallback(
@@ -195,22 +199,21 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 		std::lock_guard<std::mutex> _(depth_mtx);
 
 		auto mat = data.frame;
+		//Generate the point cloud
 		publishPoints(api, data,left, 0);
+		//Send /image/depth/raw
 
 		send(DEPTH_IDX, mat, "mono16");
-		if (p[DEPTH_CM_IDX]->getNumSubscribers() > 0)
+		//Enable this line if you desire to disable colormap when no subscribers
+		//if (p[DEPTH_CM_IDX]->getNumSubscribers() > 0)
 		{
 			Mat mat2;
 			double avgDepthMM;
-			auto str = to_string(avgDepthMM = average(mat));
-			//mat.convertTo(mat, CV_8UC1, 1);
-			//std::cout << str << std::endl;
 
 			ushort min, max;
 			analyzeRange(mat, &min, &max);
 			mat.forEach<ushort>(Operator());
 			mat.forEach<ushort>(OperatorRange(min, max));
-			//mat = UINT16_MAX - mat;//0.8m = 800
 
 			cv::convertScaleAbs(mat, mat2, 1 / 255.0, 0);
 
@@ -220,24 +223,32 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 
 			send(DEPTH_CM_IDX, mat2, "bgr8");
 		}
-		//cv::putText(mat2, str, Point(0, 20), FONT_HERSHEY_COMPLEX, 1, Scalar(INT8_MAX, INT8_MAX, INT8_MAX, INT8_MAX), 3, 8, false);
-		//		
-		//cv::imshow("depth", mat2); // CV_16UC1
-
 	});
+
 	printf("DEPTH processing ENABLED\r\n");
 	printf("Enabling MOTION stream\r\n");
-	api->SetMotionCallback([](const api::MotionData & data) {
-		if (p[IMU_IDX]->getNumSubscribers() > 0)
+	auto begin_time = ros::Time::now();
+	api->SetMotionCallback([&begin_time](const api::MotionData & data) {
+		//if (p[IMU_IDX]->getNumSubscribers() > 0)
 		{
+			auto time = ros::Time::now();
 			auto msg = sensor_msgs::Imu();
 			msg.header.frame_id = "map";
+			msg.header.stamp = time;
 			msg.header.seq = 0;
+
+			auto timeSec = (time-begin_time).toSec();
+			begin_time = time;
 
 			auto gyro = geometry_msgs::Vector3();
 			auto acc = geometry_msgs::Vector3();
 			if (data.imu->gyro)
 			{
+				//Integrate the Gyro to obtain a lookin angle
+				theta_x += Rad2Deg(data.imu->gyro[0] * timeSec);
+				theta_y += Rad2Deg(data.imu->gyro[1] * timeSec);
+				theta_z += Rad2Deg(data.imu->gyro[2] * timeSec);
+
 				gyro.x = data.imu->gyro[0];
 				gyro.y = data.imu->gyro[1];
 				gyro.z = data.imu->gyro[2];
@@ -250,23 +261,24 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 				acc.z = data.imu->accel[2];
 				msg.linear_acceleration = acc;
 			}
-
+			//Publish the IMU data to ROS
 			p[IMU_IDX]->publish(msg);
 		}
+		//Optionally print data from the IMU
+
 		//double G = 9.81;
 		//printf("IMU: Acc : x=%5.2lf m/s2 y=%5.2lf m/s2 z=%5.2lf m/s2 ", data.imu->accel[0] * G, data.imu->accel[1] * G, data.imu->accel[2] * G);
 		//printf(" Gyro: x=%8.1lf d/s y=%8.1lf d/s z=%8.1lf d/s ", data.imu->gyro[0], data.imu->gyro[1], data.imu->gyro[2]);
-		//printf(" DEPTH: %5.2lf M\r\n", avgDepthMM / 1000);
 	});
 	printf("MOTION stream ENABLED\r\n");
 	printf("Starting camera\r\n");
 	api->Start(Source::ALL);
 	printf("Camera Started\r\n");
 #ifdef _WIN32
+	//Enable the following line to run as an invisible console in Windows
 	//FreeConsole();
 #endif
-	//CVPainter painter(0);
-
+	//Loop until CTRL-C
 	while (ros::ok()) {
 		api->WaitForStreams();
 		auto &&left_data = api->GetStreamData(Stream::LEFT);
@@ -274,6 +286,7 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 
 		left = left_data.frame;
 
+		//Send left and right camera
 		send(LEFT_IDX, left_data.frame, "mono8");
 		send(RIGHT_IDX, right_data.frame, "mono8");
 		
@@ -281,6 +294,24 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 		if (key == 27 || key == 'q' || key == 'Q') { // ESC/Q
 			break;
 		}
+		//Send a Transform calculated based on the integration of the Gyro
+		//On windows it should be zero since MyntEYE get a fatal error on enabling the IMU in version 1909
+		static tf2_ros::TransformBroadcaster static_broadcaster;
+		geometry_msgs::TransformStamped static_transformStamped;
+
+		static_transformStamped.header.stamp = ros::Time::now();
+		static_transformStamped.header.frame_id = "map";
+		static_transformStamped.child_frame_id = "mynteye";
+		static_transformStamped.transform.translation.x = 0;
+		static_transformStamped.transform.translation.y = 0;
+		static_transformStamped.transform.translation.z = 0;
+		tf2::Quaternion quat;
+		quat.setRPY(0, 0, -theta_x);//roll pitch yaw
+		static_transformStamped.transform.rotation.x = quat.x();
+		static_transformStamped.transform.rotation.y = quat.y();
+		static_transformStamped.transform.rotation.z = quat.z();
+		static_transformStamped.transform.rotation.w = quat.w();
+		static_broadcaster.sendTransform(static_transformStamped);
 	}
 	printf("Closing camera\r\n");
 	api->Stop(Source::ALL);
@@ -291,7 +322,7 @@ int main(int argc, char* argv[])
 {
 	std::map<std::string, std::string> emptyMap;
 	printf("Created empty map\r\n");
-	ros::init(emptyMap, "mynteye_win", ros::init_options::AnonymousName);
+	ros::init(emptyMap, "mynteye_ros", ros::init_options::AnonymousName);
 	printf("Ros has been initialized\r\n");
 	ros::NodeHandle nl;
 	printf("Obtained NodeHandle\r\n");
@@ -318,7 +349,7 @@ int main(int argc, char* argv[])
 	else
 		std::cerr << "There is no MyntEye camera to output";
 }
-int nonZero(const cv::Mat m)
+int nonZero(const cv::Mat m)//Calculate the ammount of non zero point in image to resize the point cloud
 {
 	int c = 0;
 	ushort* ptr = (ushort*)m.data;
@@ -333,20 +364,16 @@ int nonZero(const cv::Mat m)
 #define PI 3.14159265
 void publishPoints(std::shared_ptr<mynteye::API> api,
 	const api::StreamData &data, cv::Mat left, std::uint32_t seq) {
-	// if (points_publisher_.getNumSubscribers() == 0)
-	//   return;
-
+	//Enable the following line to enable point cloud only if there is a subscriber, it will reduce CPU load
 	if (p[PCL_IDX]->getNumSubscribers())
 	{
 		auto &&in = api->GetIntrinsicsBase(Stream::LEFT);
-
-
 
 		int count = 0;
 		cv::Mat m = data.frame;
 		ushort min, max;
 		analyzeRange(m, &min, &max);
-
+		//Count non zero points
 		ushort* ptr = (ushort*)m.data;
 		for (std::size_t y = 0; y < m.rows; ++y) {
 			for (std::size_t x = 0; x < m.cols; ++x) {
@@ -380,12 +407,14 @@ void publishPoints(std::shared_ptr<mynteye::API> api,
 		sensor_msgs::PointCloud2Iterator<float> iter_y(msg, "y");
 		sensor_msgs::PointCloud2Iterator<float> iter_z(msg, "z");
 
+		//We were not able to find a way to send gray so we send as RGB8
 		sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(msg, "r");
 		sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(msg, "g");
 		sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(msg, "b");
 
 		ptr = (ushort*)m.data;
 
+		//Field of view of Mynteye S camera, adapt to your camera
 		float FOV_H = 122;
 		float FOV_V = 76;
 
@@ -395,19 +424,16 @@ void publishPoints(std::shared_ptr<mynteye::API> api,
 			for (int x = 0; x < m.cols; ++x) {
 				auto point = *ptr++;
 				auto clr = *color++;
-				if (point != 0)
+				if (point != 0) //for each non zero point
 				{
 #define ALIGN(A) 
 #define CENTER(FOV) - FOV * 0.5
-#define LEFT (FOV)
-#define TOP(FOV)
-#define RIGHT(FOV)
-#define BOTTOM(FOV)
 					float h_theta = (FOV_H * (x / (float)m.cols) ALIGN(CENTER(FOV_H)))* PI / 180.0;
 					float v_theta = (FOV_V * ((m.rows - y) / (float)m.rows - 0.5f) ALIGN(CENTER(FOV_V)))* PI / 180.0;
 					float yaw = h_theta;
 					float pitch = v_theta;
 
+					//Calculate the 3d point from a 2d depth map using camera FOV
 					float x = sin(yaw)*cos(pitch)*point / 1000;
 					float y = cos(yaw)*cos(pitch)*point / 1000;
 					float z = sin(pitch)*point / 1000;
@@ -431,8 +457,9 @@ void publishPoints(std::shared_ptr<mynteye::API> api,
 				
 			}
 		}
-
+		//Publish the generated point cloud
 		p[PCL_IDX]->publish(msg);
 	}
 
 }
+#pragma warning( pop )
