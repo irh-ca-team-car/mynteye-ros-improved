@@ -134,7 +134,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\opt\rosdeps\x64\include\boost-1_66;C:\opt\ros\melodic\x64\include;$(MYNTEYES_SDK_ROOT)\include;C:\oc2\opencv\build\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\opt\rosdeps\x64\include\boost-1_66;C:\opt\ros\melodic\x64\include;$(MYNTEYES_SDK_ROOT)\include;C:\oc2\opencv\build\include;$(ProjectDir);$(ProjectDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -156,7 +156,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\opt\rosdeps\x64\include\boost-1_66;C:\opt\ros\melodic\x64\include;$(MYNTEYES_SDK_ROOT)\include;C:\oc2\opencv\build\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\opt\rosdeps\x64\include\boost-1_66;C:\opt\ros\melodic\x64\include;$(MYNTEYES_SDK_ROOT)\include;C:\oc2\opencv\build\include;$(ProjectDir);$(ProjectDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -168,6 +168,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Matrix.cpp" />
     <ClCompile Include="src\node.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -175,6 +176,9 @@
   </ItemGroup>
   <ItemGroup>
     <Xml Include="package.xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\Matrix.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

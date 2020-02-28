@@ -1,8 +1,7 @@
-// Main node for Mynteye
+﻿// Main node for Mynteye
 //
 
 #include<mynteye/api/api.h>
- 
 #pragma warning( push )
 //Severity	Code	Description	Project	File	Line	Suppression State
 //Error(active)	E0145	member "boost::chrono::system_clock::is_steady" may not be initialized	MyntEye_ROS	C : \opt\rosdeps\x64\include\boost - 1_66\boost\chrono\system_clocks.hpp	134
@@ -56,11 +55,13 @@
 #define _DEBUG
 #endif
 
+#include "Matrix.hpp"
+
 #ifdef _WIN32
 #include <conio.h>
 #endif
-#define Rad2Deg(A) ((A)* (3.14 / 180))
-
+#define Deg2Rad(A) ((A)* (3.14 / 180))
+#define Rad2Deg(A) ((A)* (180 / 3.14))
 
 
 using namespace std::this_thread; // sleep_for, sleep_until
@@ -72,8 +73,108 @@ using namespace mynteye;
 using namespace cv;
 using byte = unsigned char;
 typedef cv::Point3_<uint8_t> Pixel;
+void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api);
 void publishPoints(std::shared_ptr<mynteye::API> api, const mynteye::api::StreamData &data, cv::Mat left, std::uint32_t seq);
+bool isFirst = true;
+sensor_msgs::Imu firstIMUmsg;
+double currentSpeedX = 0, currentSpeedY = 0, currentSpeedZ=0;
+double currentLocationX = 0, currentLocationY = 0, currentLocationZ = 0;
 
+//Transform camera centric IMU to world centric IMU to calculate camera position
+void SendAccelerationToTransform(sensor_msgs::Imu& msg, double seconds)
+{
+	printf("");
+	auto acc = msg.linear_acceleration;
+	auto gyro = msg.angular_velocity;
+
+	theta_x += (gyro.x * seconds);
+	theta_y += (gyro.y * seconds);
+	theta_z += (gyro.z * seconds);
+
+	auto rx = (theta_x);
+	auto ry = (theta_y);
+	auto rz = (theta_z);
+
+	CMatrix A = CMatrix(4, 1);
+	A(0, 0) = acc.x;
+	A(1, 0) = acc.y;
+	A(2, 0) = acc.z;
+	A(3, 0) = 1;
+	CMatrix R = CMatrix(4, 4);
+
+	R(0, 0) = std::cos(rx) * std::cos(rz);
+	R(1, 0) = std::cos(ry) * std::sin(rz);
+	R(2, 0) = -std::sin(ry);
+
+	R(0, 1) = std::sin(rx) * std::sin(ry) * std::cos(rz) -
+		std::cos(rx) * std::sin(rz);
+	R(1, 1) = std::sin(rx) * std::sin(ry) * std::sin(rz) -
+		std::cos(rx) * std::cos(rz);
+	R(2, 1) = std::sin(rx) * std::cos(ry);
+
+	R(0, 2) = std::cos(rx) * std::sin(ry) * std::sin(rz) -
+		std::sin(rx) * std::cos(rz);
+	R(1, 2) = std::cos(rx) * std::sin(ry) * std::sin(rz) -
+		std::sin(rx) * std::cos(rz);
+	R(2, 2) = std::cos(rx) * std::cos(ry);
+
+	R(3, 3) = 1;
+
+
+	if (isFirst)//First frame is gravity, no movement
+	{
+		firstIMUmsg = msg;
+		isFirst = false;
+	}
+	CMatrix g = CMatrix(4, 1);
+	
+	
+	g(0, 0) = firstIMUmsg.linear_acceleration.x;
+	g(1, 0) = firstIMUmsg.linear_acceleration.y;
+	g(2, 0) = firstIMUmsg.linear_acceleration.z;
+	
+	g(3, 0) = 1;
+
+	//Rotate acceleration and remove gravity
+	CMatrix AF = R * A + -g;
+
+	auto AccX = AF(0, 0);
+	auto AccY = AF(1, 0);
+	auto AccZ = AF(2, 0);
+
+	double dt = seconds;
+
+	//Calculate change in location
+
+	double instantXSpeed = AccX * dt;
+
+	auto dx = currentSpeedX * dt + AccX * dt * dt / 2;
+	currentSpeedX += instantXSpeed;
+
+	double instantYSpeed = AccY * dt;
+
+	auto dy = currentSpeedY * dt + AccY * dt * dt / 2;
+	currentSpeedY += instantYSpeed;
+
+	double instantZSpeed = AccZ * dt;
+
+	auto dz = currentSpeedZ * dt + AccZ * dt * dt / 2;
+	currentSpeedZ += instantZSpeed;
+
+	//Calculate new location
+	currentLocationX += (dx);
+	currentLocationY += (dy);
+	currentLocationZ += (dz);
+
+	/*auto gy = geometry_msgs::Quaternion();
+
+	gy.x = sin(ry)*sin(rz)*cos(rx) + cos(ry)*cos(rz)*sin(rx);
+	gy.y = sin(ry)*cos(rz)*cos(rx) + cos(ry)*sin(rz)*sin(rx);
+	gy.z = cos(ry)*sin(rz)*cos(rx) - sin(ry)*cos(rz)*sin(rx);
+	gy.w = cos(ry)*cos(rz)*cos(rx) - sin(ry)*sin(rz)*sin(rx);
+			
+	msg.orientation = gy;*/
+}
 double average(Mat frame)//Return the average distance in mm
 {
 	double d = 0;
@@ -237,21 +338,17 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 			msg.header.stamp = time;
 			msg.header.seq = 0;
 
-			auto timeSec = (time-begin_time).toSec();
+			auto timeSecSinceLast = (time-begin_time).toSec();
 			begin_time = time;
 
 			auto gyro = geometry_msgs::Vector3();
 			auto acc = geometry_msgs::Vector3();
+
 			if (data.imu->gyro)
 			{
-				//Integrate the Gyro to obtain a lookin angle
-				theta_x += Rad2Deg(data.imu->gyro[0] * timeSec);
-				theta_y += Rad2Deg(data.imu->gyro[1] * timeSec);
-				theta_z += Rad2Deg(data.imu->gyro[2] * timeSec);
-
-				gyro.x = data.imu->gyro[0];
-				gyro.y = data.imu->gyro[1];
-				gyro.z = data.imu->gyro[2];
+				gyro.x = Deg2Rad(data.imu->gyro[0]);
+				gyro.y = Deg2Rad(data.imu->gyro[1]);
+				gyro.z = Deg2Rad(data.imu->gyro[2]);
 				msg.angular_velocity = gyro;
 			}
 			if (data.imu->accel)
@@ -261,6 +358,8 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 				acc.z = data.imu->accel[2];
 				msg.linear_acceleration = acc;
 			}
+			//Integrate the Gyro to obtain a lookin angle and location
+			SendAccelerationToTransform(msg, timeSecSinceLast);
 			//Publish the IMU data to ROS
 			p[IMU_IDX]->publish(msg);
 		}
@@ -305,12 +404,27 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 		static_transformStamped.transform.translation.x = 0;
 		static_transformStamped.transform.translation.y = 0;
 		static_transformStamped.transform.translation.z = 0;
+		//static_transformStamped.transform.translation.x = currentLocationX;
+		//static_transformStamped.transform.translation.y = currentLocationY;
+		//static_transformStamped.transform.translation.z = currentLocationZ;
 		tf2::Quaternion quat;
-		quat.setRPY(0, 0, -theta_x);//roll pitch yaw
+		quat.setRPY(0,0,-theta_x);//roll pitch yaw
 		static_transformStamped.transform.rotation.x = quat.x();
 		static_transformStamped.transform.rotation.y = quat.y();
 		static_transformStamped.transform.rotation.z = quat.z();
 		static_transformStamped.transform.rotation.w = quat.w();
+
+		/*auto gy = geometry_msgs::Quaternion();
+		auto rz = theta_z;
+		auto rx = theta_y;
+		auto ry = theta_y;
+		gy.x = sin(ry)*sin(rz)*cos(rx) + cos(ry)*cos(rz)*sin(rx);
+		gy.y = sin(ry)*cos(rz)*cos(rx) + cos(ry)*sin(rz)*sin(rx);
+		gy.z = cos(ry)*sin(rz)*cos(rx) - sin(ry)*cos(rz)*sin(rx);
+		gy.w = cos(ry)*cos(rz)*cos(rx) - sin(ry)*sin(rz)*sin(rx);
+
+		static_transformStamped.transform.rotation = gy;*/
+
 		static_broadcaster.sendTransform(static_transformStamped);
 	}
 	printf("Closing camera\r\n");
@@ -440,7 +554,7 @@ void publishPoints(std::shared_ptr<mynteye::API> api,
 
 
 					*iter_x = x;
-					*iter_y = y;
+					*iter_y = y; 
 					*iter_z = z;
 
 					*iter_r = static_cast<uint8_t>(clr);

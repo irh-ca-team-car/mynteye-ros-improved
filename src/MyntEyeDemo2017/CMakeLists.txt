@@ -91,6 +91,7 @@ add_compile_options(-std=c++11)
 include_directories(
   ${catkin_INCLUDE_DIRS}
   ${SDK_DIR}/src
+  include/
 )
 
 set(LINK_LIBS
@@ -102,7 +103,7 @@ set(LINK_LIBS
 #target_link_libraries(mynteye_wrapper ${LINK_LIBS})
 #add_dependencies(mynteye_wrapper ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-add_executable(mynteye_wrapper_node src/node.cpp)
+add_executable(mynteye_wrapper_node src/node.cpp src/Matrix.cpp)
 add_dependencies(mynteye_wrapper_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(mynteye_wrapper_node ${LINK_LIBS})
 
