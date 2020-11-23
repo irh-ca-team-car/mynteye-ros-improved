@@ -19,32 +19,33 @@
   <build_depend>geometry_msgs</build_depend>
   <build_depend>image_transport</build_depend>
   <build_depend>message_generation</build_depend>
-  <build_depend>nodelet</build_depend>
   <build_depend>roscpp</build_depend>
   <build_depend>sensor_msgs</build_depend>
   <build_depend>std_msgs</build_depend>
-  <build_depend>tf</build_depend>
+  <build_depend condition="$ROS_VERSION == 1">tf</build_depend>
+  <build_depend condition="$ROS_VERSION == 2">tf2</build_depend>
+  <build_depend>imu_filter_madgwick</build_depend>
 
   <build_export_depend>cv_bridge</build_export_depend>
   <build_export_depend>geometry_msgs</build_export_depend>
   <build_export_depend>image_transport</build_export_depend>
-  <build_export_depend>nodelet</build_export_depend>
   <build_export_depend condition="$ROS_VERSION == 1">roscpp</build_export_depend>
   <build_export_depend condition="$ROS_VERSION == 2">rclcpp</build_export_depend>
   <build_export_depend>sensor_msgs</build_export_depend>
   <build_export_depend>std_msgs</build_export_depend>
-  <build_export_depend>tf</build_export_depend>
+  <build_export_depend condition="$ROS_VERSION == 1">tf</build_export_depend>
+  <build_export_depend condition="$ROS_VERSION == 2">tf2</build_export_depend>
 
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>image_transport</exec_depend>
   <exec_depend condition="$ROS_VERSION == 1">message_runtime</exec_depend>
-  <exec_depend condition="$ROS_VERSION == 1">nodelet</exec_depend>
   <exec_depend condition="$ROS_VERSION == 1">roscpp</exec_depend>
   <exec_depend condition="$ROS_VERSION == 2">rclcpp</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
-  <exec_depend>tf</exec_depend>
+  <exec_depend condition="$ROS_VERSION == 1">tf</exec_depend>
+  <exec_depend condition="$ROS_VERSION == 2">tf2</exec_depend>
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>

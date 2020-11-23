@@ -15,6 +15,9 @@
 cmake_minimum_required(VERSION 3.5)
 project(mynt_eye_ros_wrapper_for_xavier)
 
+
+set(CMAKE_PREFIX_PATH /opt/opencv341/lib;${CMAKE_PREFIX_PATH})
+
 find_package(ros_environment REQUIRED)
 set(ROS_VERSION $ENV{ROS_VERSION})
 
@@ -163,6 +166,7 @@ find_package(cv_bridge REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(Boost COMPONENTS system filesystem REQUIRED)
+find_package(imu_filter_madgwick REQUIRED)
 
 LIST(APPEND CMAKE_MODULE_PATH cmake)
 find_package(mynteye REQUIRED)
@@ -185,6 +189,7 @@ ament_target_dependencies(mynteye_wrapper_node
   tf2_ros
   mynteye
   OpenCV
+  imu_filter_madgwick
 )
 target_link_libraries(mynteye_wrapper_node 
   mynteye 
