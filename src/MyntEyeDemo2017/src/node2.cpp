@@ -68,6 +68,7 @@ using namespace std::this_thread; // sleep_for, sleep_until
 using namespace std::chrono; // nanoseconds, system_clock, seconds
 
 double theta_x=0, theta_y=0, theta_z=0;
+std::string topic_left,topic_right, topic_depth, topic_color_map, topic_imu, topic_point_cloud, frame_id,parent_frame_id;
 
 using namespace mynteye;
 using namespace cv;
@@ -277,6 +278,8 @@ void send(int idx, Mat m, std::string format)
 {
 	cv_bridge::CvImage img;
 	img.image = m;
+	img.header.frame_id=frame_id;
+	img.header.stamp=n->now();
 	img.encoding = format;
 	auto msg = img.toImageMsg();
 	p[idx]->publish(*msg);
@@ -288,13 +291,13 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 	api->EnableMotionDatas();
 	api->EnableStreamData(Stream::DEPTH);
 	//Some debug messages when we start the node
-	printf("Enabling DEPTH stream\r\n");
+	RCLCPP_INFO(n->get_logger(),"Enabling DEPTH stream");
 
 	//Store the left image to apply the correct gray on the point cloud
 	cv::Mat left;
 	
 	std::mutex depth_mtx, left_mtx;
-	printf("Enabling DEPTH processing\r\n");
+	RCLCPP_INFO(n->get_logger(),"Enabling DEPTH processing");
 	api->SetStreamCallback(
 		Stream::DEPTH,
 		[&api,&depth_mtx,&left](const api::StreamData &data) {
@@ -326,8 +329,8 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 			send(DEPTH_CM_IDX, mat2, "bgr8");
 		}
 	});
-	printf("DEPTH processing ENABLED\r\n");
-	printf("Enabling MOTION stream\r\n");
+	RCLCPP_INFO(n->get_logger(),"DEPTH processing ENABLED");
+	RCLCPP_INFO(n->get_logger(),"Enabling MOTION stream");
 	auto begin_time = n->now();
 	api->SetMotionCallback([&begin_time](const api::MotionData & data) {
 		
@@ -335,7 +338,7 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 		{
 			auto time = n->now();
 			auto msg = sensor_msgs::msg::Imu();
-			msg.header.frame_id = "map";
+			msg.header.frame_id = frame_id;
 			msg.header.stamp = time;
 			//auto timeSecSinceLast = (time-begin_time).toSec();
 			begin_time = time;
@@ -343,7 +346,6 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 			auto acc = geometry_msgs::msg::Vector3();
 			if (data.imu->gyro)
 			{	
-				TRACE;
 				gyro.x = Deg2Rad(data.imu->gyro[0]);
 				gyro.y = Deg2Rad(data.imu->gyro[1]);
 				gyro.z = Deg2Rad(data.imu->gyro[2]);
@@ -351,7 +353,6 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 			}
 			if (data.imu->accel)
 			{
-				TRACE;
 				acc.x = data.imu->accel[0];
 				acc.y = data.imu->accel[1];
 				acc.z = data.imu->accel[2];
@@ -368,10 +369,10 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 		//printf("IMU: Acc : x=%5.2lf m/s2 y=%5.2lf m/s2 z=%5.2lf m/s2 ", data.imu->accel[0] * G, data.imu->accel[1] * G, data.imu->accel[2] * G);
 		//printf(" Gyro: x=%8.1lf d/s y=%8.1lf d/s z=%8.1lf d/s ", data.imu->gyro[0], data.imu->gyro[1], data.imu->gyro[2]);
 	});
-	printf("MOTION stream ENABLED\r\n");
-	printf("Starting camera\r\n");
+	RCLCPP_INFO(n->get_logger(),"MOTION stream ENABLED");
+	RCLCPP_INFO(n->get_logger(),"Starting camera");
 	api->Start(Source::ALL);
-	printf("Camera Started\r\n");
+	RCLCPP_INFO(n->get_logger(),"Camera Started");
 #ifdef _WIN32
 	//Enable the following line to run as an invisible console in Windows
 	//FreeConsole();
@@ -397,14 +398,11 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 		geometry_msgs::msg::TransformStamped static_transformStamped;
 
 		static_transformStamped.header.stamp = n->now();
-		static_transformStamped.header.frame_id = "map";
-		static_transformStamped.child_frame_id = "mynteye";
+		static_transformStamped.header.frame_id = parent_frame_id;
+		static_transformStamped.child_frame_id = frame_id;
 		static_transformStamped.transform.translation.x = 0;
 		static_transformStamped.transform.translation.y = 0;
 		static_transformStamped.transform.translation.z = 0;
-		//static_transformStamped.transform.translation.x = currentLocationX;
-		//static_transformStamped.transform.translation.y = currentLocationY;
-		//static_transformStamped.transform.translation.z = currentLocationZ;
 		tf2::Quaternion quat;
 		quat.setRPY(0,0,-theta_x);//roll pitch yaw
 		static_transformStamped.transform.rotation.x = quat.x();
@@ -425,11 +423,10 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 		tf2_ros::TransformBroadcaster brod(n);
 		brod.sendTransform(static_transformStamped);
 	}
-	printf("Closing camera\r\n");
+	RCLCPP_INFO(n->get_logger(),"Closing camera");
 	api->Stop(Source::ALL);
-	printf("Camera closed\r\n");
+	RCLCPP_INFO(n->get_logger(),"Camera closed");
 }
-
 int main(int argc, char* argv[])
 {
 	printf("Created empty map\r\n");
@@ -437,22 +434,40 @@ int main(int argc, char* argv[])
 	
 	printf("Ros has been initialized\r\n");
 	n = std::make_shared<rclcpp::Node>("mynteye_ros");
-	printf("Obtained Node\r\n");
-	p[LEFT_IDX] = n->create_publisher<sensor_msgs::msg::Image>("image/left",1);
-	p[DEPTH_IDX] = n->create_publisher<sensor_msgs::msg::Image>("image/depth", 1);
-	p[RIGHT_IDX] = n->create_publisher<sensor_msgs::msg::Image>("image/right", 1);
-	p[DEPTH_CM_IDX] = n->create_publisher<sensor_msgs::msg::Image>("image/depth/color_map", 1);
-	pimu = n->create_publisher<sensor_msgs::msg::Imu>("mynteye/imu", 100);
-	ppcl = n->create_publisher<sensor_msgs::msg::PointCloud2>("image/point_cloud", 1);
-	printf("Advertised topics\r\n");
+	RCLCPP_INFO(n->get_logger(),"Obtained Node");
 
-	printf("Obtaining MyntEYE API\r\n");
+	topic_left = n->declare_parameter<std::string>("topic_left","/mynteye/image/left");
+	topic_right = n->declare_parameter<std::string>("topic_right","/mynteye/image/right");
+	topic_depth = n->declare_parameter<std::string>("topic_depth","/mynteye/image/depth");
+	topic_color_map = n->declare_parameter<std::string>("topic_color_map","/mynteye/image/depth/color_map");
+	topic_imu = n->declare_parameter<std::string>("topic_imu","/mynteye/imu");
+	topic_point_cloud = n->declare_parameter<std::string>("topic_point_cloud","/mynteye/image/point_cloud");
+	frame_id = n->declare_parameter<std::string>("frame_id","mynteye");
+	parent_frame_id = n->declare_parameter<std::string>("parent_frame_id","map");
+
+	p[LEFT_IDX] = n->create_publisher<sensor_msgs::msg::Image>(topic_left,1);
+	p[DEPTH_IDX] = n->create_publisher<sensor_msgs::msg::Image>(topic_depth, 1);
+	p[RIGHT_IDX] = n->create_publisher<sensor_msgs::msg::Image>(topic_right, 1);
+	p[DEPTH_CM_IDX] = n->create_publisher<sensor_msgs::msg::Image>(topic_color_map, 1);
+	pimu = n->create_publisher<sensor_msgs::msg::Imu>(topic_imu, 100);
+	ppcl = n->create_publisher<sensor_msgs::msg::PointCloud2>(topic_point_cloud, 1);
+
+	RCLCPP_INFO(n->get_logger(),"Advertised topics");
+	RCLCPP_INFO(n->get_logger(),"\t topic_left=%s",topic_left.c_str());
+	RCLCPP_INFO(n->get_logger(),"\t topic_right=%s",topic_right.c_str());
+	RCLCPP_INFO(n->get_logger(),"\t topic_depth=%s",topic_depth.c_str());
+	RCLCPP_INFO(n->get_logger(),"\t topic_color_map=%s",topic_color_map.c_str());
+	RCLCPP_INFO(n->get_logger(),"\t topic_imu=%s",topic_imu.c_str());
+	RCLCPP_INFO(n->get_logger(),"\t topic_point_cloud=%s",topic_point_cloud.c_str());
+	RCLCPP_INFO(n->get_logger(),"\t frame_id=%s",frame_id.c_str());
+	RCLCPP_INFO(n->get_logger(),"\t parent_frame_id=%s",parent_frame_id.c_str());
+	RCLCPP_INFO(n->get_logger(),"Obtaining MyntEYE API");
 	auto api = API::Create(argc, argv);
 	
 	if (api)
 		HandleCaptureAndROS(api);
 	else
-		std::cerr << "There is no MyntEye camera to output";
+		RCLCPP_ERROR(n->get_logger(),"There is no MyntEye camera to output");
 }
 int nonZero(const cv::Mat m)//Calculate the ammount of non zero point in image to resize the point cloud
 {
@@ -490,7 +505,7 @@ void publishPoints(std::shared_ptr<mynteye::API> api,
 		auto time = n->now();
 		sensor_msgs::msg::PointCloud2 msg;
 		msg.header.stamp = time;
-		msg.header.frame_id = "map";
+		msg.header.frame_id = frame_id;
 		
 		msg.width = count;
 		msg.height = 1;
