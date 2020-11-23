@@ -43,8 +43,8 @@
 #include <mutex>
 #include <atomic>
 #include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/imu.h"
-#include "sensor_msgs/msg/image.h"
+#include "sensor_msgs/msg/imu.hpp"
+#include "sensor_msgs/msg/image.hpp"
 #include "cv_bridge/cv_bridge.h"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "sensor_msgs/point_cloud2_iterator.hpp"
@@ -76,14 +76,13 @@ typedef cv::Point3_<uint8_t> Pixel;
 void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api);
 void publishPoints(std::shared_ptr<mynteye::API> api, const mynteye::api::StreamData &data, cv::Mat left);
 bool isFirst = true;
-//sensor_msgs::msg::Imu::SharedPtr firstIMUmsg;
+sensor_msgs::msg::Imu firstIMUmsg;
 double currentSpeedX = 0, currentSpeedY = 0, currentSpeedZ=0;
 double currentLocationX = 0, currentLocationY = 0, currentLocationZ = 0;
 
 //Transform camera centric IMU to world centric IMU to calculate camera position
-/*void SendAccelerationToTransform(sensor_msgs::msg::Imu& msg, double seconds)
+void SendAccelerationToTransform(sensor_msgs::msg::Imu& msg, double seconds)
 {
-	printf("");
 	auto acc = msg.linear_acceleration;
 	auto gyro = msg.angular_velocity;
 
@@ -174,7 +173,7 @@ double currentLocationX = 0, currentLocationY = 0, currentLocationZ = 0;
 	//gy.w = cos(ry)*cos(rz)*cos(rx) - sin(ry)*sin(rz)*sin(rx);
 			
 	//msg.orientation = gy;
-}*/
+}
 double average(Mat frame)//Return the average distance in mm
 {
 	double d = 0;
@@ -244,7 +243,7 @@ std::string to_string(double data)//Convert a mm value to a meter string
 //Store ros elements
 rclcpp::Node::SharedPtr n;
 rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr p[4];
-//rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pimu;
+rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pimu;
 rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr ppcl;
 //ros::Publisher* p[6];
 #define DEPTH_IDX 1
@@ -327,27 +326,24 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 			send(DEPTH_CM_IDX, mat2, "bgr8");
 		}
 	});
-
 	printf("DEPTH processing ENABLED\r\n");
 	printf("Enabling MOTION stream\r\n");
 	auto begin_time = n->now();
 	api->SetMotionCallback([&begin_time](const api::MotionData & data) {
-		//if (p[IMU_IDX]->getNumSubscribers() > 0)
+		
+		if (pimu->get_subscription_count() > 0)
 		{
-			/*auto time = n->now();
+			auto time = n->now();
 			auto msg = sensor_msgs::msg::Imu();
 			msg.header.frame_id = "map";
 			msg.header.stamp = time;
-			msg.header.seq = 0;
-
-			auto timeSecSinceLast = (time-begin_time).toSec();
+			//auto timeSecSinceLast = (time-begin_time).toSec();
 			begin_time = time;
-
-			auto gyro = geometry_msgs::Vector3();
-			auto acc = geometry_msgs::Vector3();
-
+			auto gyro = geometry_msgs::msg::Vector3();
+			auto acc = geometry_msgs::msg::Vector3();
 			if (data.imu->gyro)
-			{
+			{	
+				TRACE;
 				gyro.x = Deg2Rad(data.imu->gyro[0]);
 				gyro.y = Deg2Rad(data.imu->gyro[1]);
 				gyro.z = Deg2Rad(data.imu->gyro[2]);
@@ -355,15 +351,16 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 			}
 			if (data.imu->accel)
 			{
+				TRACE;
 				acc.x = data.imu->accel[0];
 				acc.y = data.imu->accel[1];
 				acc.z = data.imu->accel[2];
 				msg.linear_acceleration = acc;
-			}*/
+			}
 			//Integrate the Gyro to obtain a lookin angle and location
 			//SendAccelerationToTransform(msg, timeSecSinceLast);
 			//Publish the IMU data to ROS
-			//pimu->publish(msg);
+			pimu->publish(msg);
 		}
 		//Optionally print data from the IMU
 
@@ -445,7 +442,7 @@ int main(int argc, char* argv[])
 	p[DEPTH_IDX] = n->create_publisher<sensor_msgs::msg::Image>("image/depth", 1);
 	p[RIGHT_IDX] = n->create_publisher<sensor_msgs::msg::Image>("image/right", 1);
 	p[DEPTH_CM_IDX] = n->create_publisher<sensor_msgs::msg::Image>("image/depth/color_map", 1);
-	//ros::Publisher pimu = nl.advertise<sensor_msgs::Imu>("mynteye/imu", 100);
+	pimu = n->create_publisher<sensor_msgs::msg::Imu>("mynteye/imu", 100);
 	ppcl = n->create_publisher<sensor_msgs::msg::PointCloud2>("image/point_cloud", 1);
 	printf("Advertised topics\r\n");
 
