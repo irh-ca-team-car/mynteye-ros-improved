@@ -7,7 +7,7 @@ The project has been created using MyntEye demo and converted to the ros node
 
 Headers files for opencv should be here : C:\oc2\opencv\build\include
 
-On windows the project requires Ros Melodic : http://wiki.ros.org/Installation/Windows
+On windows the project requires Ros Noetic or Foxy : http://wiki.ros.org/Installation/Windows
 
 Project cannot be used in DEBUG mode since of ros 
 

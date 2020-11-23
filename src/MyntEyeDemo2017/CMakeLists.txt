@@ -12,14 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.5)
 project(mynt_eye_ros_wrapper_for_xavier)
+
+find_package(ros_environment REQUIRED)
+set(ROS_VERSION $ENV{ROS_VERSION})
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
 # packages
+# Default to C++14
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 14)
+endif()
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  #add_compile_options(-Wall -Wextra -Wpedantic)
+  add_compile_options(-Wall -Wextra -Wfatal-errors)
+endif()
 
 function(checkPackage package customMessage)
   set(varName "${package}_FOUND")
@@ -33,6 +45,9 @@ function(checkPackage package customMessage)
   endif()
 endfunction(checkPackage)
 
+find_package(OpenCV 3 REQUIRED)
+
+if(${ROS_VERSION} EQUAL 1)
 find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   geometry_msgs
@@ -78,7 +93,6 @@ if(NOT mynteye_WITH_API)
   message(FATAL_ERROR "Must with API layer :(")
 endif()
 
-find_package(OpenCV REQUIRED)
 
 if(mynteye_WITH_GLOG)
   find_package(glog REQUIRED)
@@ -137,3 +151,48 @@ install(DIRECTORY rviz/
 install(FILES nodelet_plugins.xml
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
+
+elseif(${ROS_VERSION} EQUAL 2)
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(image_transport REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(Boost COMPONENTS system filesystem REQUIRED)
+
+LIST(APPEND CMAKE_MODULE_PATH cmake)
+find_package(mynteye REQUIRED)
+message(STATUS "Found mynteye: ${mynteye_VERSION}")
+
+add_executable(mynteye_wrapper_node src/node2.cpp src/Matrix2.cpp)
+
+target_include_directories(mynteye_wrapper_node
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(mynteye_wrapper_node
+  cv_bridge 
+  geometry_msgs 
+  image_transport 
+  rclcpp 
+  sensor_msgs 
+  std_msgs 
+  tf2
+  tf2_ros
+  mynteye
+  OpenCV
+)
+target_link_libraries(mynteye_wrapper_node 
+  mynteye 
+)
+install(TARGETS 
+ mynteye_wrapper_node
+ DESTINATION lib/${PROJECT_NAME}
+)
+
+ament_package()
+endif()
