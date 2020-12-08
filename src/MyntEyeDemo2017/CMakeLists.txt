@@ -15,9 +15,6 @@
 cmake_minimum_required(VERSION 3.5)
 project(mynt_eye_ros_wrapper_for_xavier)
 
-
-set(CMAKE_PREFIX_PATH /opt/opencv341/lib;${CMAKE_PREFIX_PATH})
-
 find_package(ros_environment REQUIRED)
 set(ROS_VERSION $ENV{ROS_VERSION})
 
@@ -48,7 +45,7 @@ function(checkPackage package customMessage)
   endif()
 endfunction(checkPackage)
 
-find_package(OpenCV 3 REQUIRED)
+find_package(OpenCV 4 REQUIRED)
 
 if(${ROS_VERSION} EQUAL 1)
 find_package(catkin REQUIRED COMPONENTS
