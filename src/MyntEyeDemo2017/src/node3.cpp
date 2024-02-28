@@ -106,11 +106,11 @@ std::string to_string(double data) //Convert a mm value to a meter string
 //Store ros elements
 
 //Send a cv::Mat over ROS
-void send(int idx, Mat m, std::string format)
+void send(int idx, Mat m, std::string format, std::string frame)
 {
 	cv_bridge::CvImage img;
 	img.image = m;
-	img.header.frame_id = frame_id;
+	img.header.frame_id = frame;
 	img.header.stamp = n->now();
 	img.encoding = format;
 	auto msg = img.toImageMsg();
@@ -149,16 +149,18 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 			auto acc = geometry_msgs::msg::Vector3();
 			if (data.imu->gyro)
 			{
-				gyro.x = Deg2Rad(data.imu->gyro[0]);
-				gyro.y = Deg2Rad(data.imu->gyro[1]);
-				gyro.z = Deg2Rad(data.imu->gyro[2]);
+				gyro.x = Deg2Rad(data.imu->gyro[2]);
+				gyro.y = Deg2Rad(data.imu->gyro[0]);
+				gyro.z = Deg2Rad(data.imu->gyro[1]);
 				imu_msg.angular_velocity = gyro;
 			}
 			if (data.imu->accel)
 			{
-				acc.x = data.imu->accel[0];
-				acc.y = data.imu->accel[1];
-				acc.z = data.imu->accel[2];
+                //Mynt: Z forward, X left, Y up
+                //ROS:x forwars, y lateral, z up
+				acc.x = data.imu->accel[2] * 9.81;
+				acc.y = data.imu->accel[0]* 9.81;
+				acc.z = data.imu->accel[1]* 9.81;
 				imu_msg.linear_acceleration = acc;
 			}
 			//Integrate the Gyro to obtain a lookin angle and location
@@ -207,8 +209,8 @@ void HandleCaptureAndROS(std::shared_ptr<mynteye::API> api)
 		left = left_data.frame;
 
 		//Send left and right camera
-		send(LEFT_IDX, left_data.frame, "mono8");
-		send(RIGHT_IDX, right_data.frame, "mono8");
+		send(LEFT_IDX, left_data.frame, "mono8", left_frame_id);
+		send(RIGHT_IDX, right_data.frame, "mono8", right_frame_id);
 
 		char key = static_cast<char>(cv::waitKey(1));
 		if (key == 27 || key == 'q' || key == 'Q')
@@ -233,7 +235,7 @@ int main(int argc, char *argv[])
 	topic_left = n->declare_parameter<std::string>("topic_left", "/mynteye/image/left");
 	topic_right = n->declare_parameter<std::string>("topic_right", "/mynteye/image/right");
 	topic_imu = n->declare_parameter<std::string>("topic_imu", "/mynteye/imu");
-	frame_id = n->declare_parameter<std::string>("frame_id", "mynteye");
+	frame_id = n->declare_parameter<std::string>("imu_frame_id", "mynteye_imu");
 	left_frame_id = n->declare_parameter<std::string>("left_frame_id", "mynteye_left");
 	right_frame_id = n->declare_parameter<std::string>("right_frame_id", "mynteye_right");
 
@@ -250,6 +252,7 @@ int main(int argc, char *argv[])
 	RCLCPP_INFO(n->get_logger(), "\t right_frame_id=%s", right_frame_id.c_str());
 	RCLCPP_INFO(n->get_logger(), "Obtaining MyntEYE API");
 	auto api = API::Create(argc, argv);
+	RCLCPP_INFO(n->get_logger(), "MyntEYE API obtained");
 
 	if (api)
 		HandleCaptureAndROS(api);
