@@ -61,32 +61,7 @@ LIST(APPEND CMAKE_MODULE_PATH cmake)
 find_package(mynteye REQUIRED)
 message(STATUS "Found mynteye: ${mynteye_VERSION}")
 
-add_executable(mynteye_wrapper_node src/node2.cpp src/Matrix2.cpp)
 add_executable(mynteye_wrapper_node_2024 src/node3.cpp src/Matrix2.cpp)
-
-target_include_directories(mynteye_wrapper_node
-  PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>)
-ament_target_dependencies(mynteye_wrapper_node
-  cv_bridge 
-  geometry_msgs 
-  image_transport 
-  rclcpp 
-  sensor_msgs 
-  std_msgs 
-  tf2
-  tf2_ros
-  mynteye
-  OpenCV
-)
-target_link_libraries(mynteye_wrapper_node 
-  mynteye 
-)
-install(TARGETS 
- mynteye_wrapper_node
- DESTINATION lib/${PROJECT_NAME}
-)
 
 target_include_directories(mynteye_wrapper_node_2024
   PUBLIC
