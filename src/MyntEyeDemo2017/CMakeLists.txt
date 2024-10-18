@@ -56,7 +56,6 @@ find_package(cv_bridge REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(Boost COMPONENTS system filesystem REQUIRED)
-find_package(imu_filter_madgwick REQUIRED)
 
 LIST(APPEND CMAKE_MODULE_PATH cmake)
 find_package(mynteye REQUIRED)
@@ -80,7 +79,6 @@ ament_target_dependencies(mynteye_wrapper_node
   tf2_ros
   mynteye
   OpenCV
-  imu_filter_madgwick
 )
 target_link_libraries(mynteye_wrapper_node 
   mynteye 
@@ -105,7 +103,6 @@ ament_target_dependencies(mynteye_wrapper_node_2024
   tf2_ros
   mynteye
   OpenCV
-  imu_filter_madgwick
 )
 target_link_libraries(mynteye_wrapper_node_2024 
   mynteye 
