@@ -56,8 +56,6 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.h>
 #include <tf2/LinearMath/Quaternion.h>
-#include "imu_filter_madgwick/imu_filter_ros.h"
-#include "imu_filter_madgwick/stateless_orientation.h"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
 #include <tf2/LinearMath/Matrix3x3.h>
